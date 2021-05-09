@@ -3,10 +3,12 @@ import math
 import librosa
 import numpy as np
 import time
+from sys import stdout
 from rpi_ws281x import *
 
 
 
+# Useful information
 filename = "Swif7-Don'tWannaSleep.mp3"
 NUM_LEDS = 60
 window_size = 2048
@@ -14,7 +16,7 @@ hop_length = 64
 
 
 
-# Setup:
+# Script Setup:
     # sudo -s
     # Setup virtual environemt
     # source env/bin/activate
@@ -25,37 +27,64 @@ hop_length = 64
 
 
 
-# Helper Functions & Stuff
+# Divide up the STFT frequency indexes and map them to the LEDs
 def getFreqBins(spec, freqs) :
-        freqBins = []
-        size = len(freqs)
-        increment = size / NUM_LEDS
-        for i in range(NUM_LEDS):
-            freqBins.append(i*increment)
+	freqBins = []
+	size = len(freqs)
+	increment = size / NUM_LEDS
+	for i in range(NUM_LEDS):
+		freqBins.append(i*increment)
 
-        return freqBins
+	return freqBins
 
 
+# Scales down an value by a factor if it's less than a threshold
+def lowAmplitudeAttenuation(amplitude, threshold, shrink_factor) :
+	# 0 < amplitude, threshold, shrink_factor < 1
+	if amplitude <= threshold :
+		amplitude = shrink_factor * amplitude
+
+	return amplitude
+
+
+# Maps the amplitude to a corresponding rgb value
+	# Try and scale down smaller values so the peaks are more apparent
+	# Uses a bell-curve like function to make a continous spectrum on the leds where:
+		# Bass = Blue, Mid = Green, High = Red
 def amplitudeToColour(amplitude, freq) :
-        r = 0
-        g = 0
-        b = 0
+	r = 0
+	g = 0
+	b = 0
 
-        # Bass - Blue
-        #if freq >= 20 and freq < 250 :
-        b = int( 255 * amplitude )
-        # Midrange - Green
-        #if freq >= 250 and freq < 4000 :
-        #g = int( 255 * amplitude )
-        # Presence / Brilliance - Red
-        #if freq >= 250 and freq < 4000 :
-        #r = int( 255 * amplitude )
+	# Scale amplitudes below 0.5 by 0.5
+	tHold = 0.5
+	scale_factor = 0.5
+	amplitude = lowAmplitudeAttenuation(amplitude, tHold, scale_factor)
+
+	# Scale amplitudes below 0.3 by 0.3
+	tHold = 0.3
+	scale_factor = 0.3
+	amplitude = lowAmplitudeAttenuation(amplitude, tHold, scale_factor)
+
+	# Bass - Blue
+	bassFactor = np.exp( -1 * np.power( freq/300 , 4) ) # e^(-(x/300)^4)
+	b = int( 255 * amplitude * bassFactor )
+        
+	# Midrange - Green
+	midFactor = np.exp( -1 * np.power( (freq-2500)/2250 , 12) ) #  e^(-( (x-2500)/2250 )^12 )
+	g = int( 255 * amplitude * midFactor )
+	
+	# Presence / Brilliance - Red
+	if freq >= 4000 :
+		r = int( 255 * amplitude )
+	
+
+	return Color(r, g, b)
 
 
-        col = Color(r, g, b)
-        return col
 
 
+# Writes a colour value to all leds
 def colorWipe(strip, color, wait_ms=50):
     """Wipe color across display a pixel at a time."""
     for i in range(strip.numPixels()):
@@ -66,10 +95,10 @@ def colorWipe(strip, color, wait_ms=50):
 
 
 
-# Setting up led
+# Setting up leds
 LED_COUNT      = 60      # Number of LED pixels.
-LED_PIN        = 18      # TODO: Check this, GPIO pin connected to the pixels (18 uses PWM!).
-#LED_PIN        = 10      # GPIO pin connected to the pixels (10 uses SPI /dev/spidev0.0).
+LED_PIN        = 18      # GPIO pin connected to the pixels (18 uses PWM!).
+#LED_PIN        = 10     # GPIO pin connected to the pixels (10 uses SPI /dev/spidev0.0).
 LED_FREQ_HZ    = 800000  # LED signal frequency in hertz (usually 800khz)
 LED_DMA        = 10      # DMA channel to use for generating signal (try 10)
 LED_BRIGHTNESS = 255     # Set to 0 for darkest and 255 for brightest
@@ -79,6 +108,7 @@ LED_CHANNEL    = 0       # set to '1' for GPIOs 13, 19, 41, 45 or 53
 strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, LED_FREQ_HZ, LED_DMA, LED_INVERT, LED_BRIGHTNESS, LED_CHANNEL)
 # Intialize the library (must be called once before other functions).
 strip.begin()
+
 
 
 
@@ -100,60 +130,71 @@ freqs = librosa.core.fft_frequencies(n_fft=window_size)
 times = librosa.core.frames_to_time(spectrogram[0], sr=sample_rate, n_fft=window_size, hop_length=hop_length)
 
 
+
 # Get freqs to map to 60 leds
 freqBins = getFreqBins(spectrogram, freqs)
+
 
 
 # Get the max value for each freq during the song
 max_amps = []
 for i in range(len(freqs)) :
-        freqTime = spectrogram[i, :]
-        max_amps.append( np.max(freqTime) )
+	freqTime = spectrogram[i, :]
+	max_amps.append( np.max(freqTime) )
+
 
 
 # Show start prompt
-print("Staring Visualization of ", filename, " for ", LEN_SONG, " seconds")
-
+print("Staring Visualization of ", filename, "in: ")
+for i in range(3,0,-1):
+    stdout.write("\r%d" % i)
+    stdout.flush()
+    time.sleep(1)
+print("\nGo!\n")
 
 
 # Start timer
 timeStart = time.time()
 currTime = time.time() - timeStart
-firstTime = True
 
 
+# Writing the STFT ampiltudes to leds until song is done
 while currTime < LEN_SONG :
 
-        time_idx = int(currTime * sample_rate / hop_length)
+	# Get the proper STFT time index from our current time
+	time_idx = int(currTime * sample_rate / hop_length)
 
-        led = 0
-        for fft_bin in range(len(freqBins)) :
-                amplitude = spectrogram[fft_bin, time_idx]
-                # Convert to rgb value
-                col = amplitudeToColour( amplitude, freqs[fft_bin] );
+	# Display Current Song Progress
+	stdout.write("\rCurrent Progress: %lf seconds" % currTime)
+	stdout.flush()
 
-                #if fft_bin == 15 :
-                        #print("Amplitude = ", amplitude, " and intensity = ", int( 255 * amplitude ), " and sample_rate = ", sample_rate, " @ timestep = ", time_idx)
-                        #print("\n\n")
+	# Writing Colour-Mapped Amplitude to all LEDs
+	led = 0
+	for fft_bin in range(len(freqBins)) :
+                # Retrieve amp from STFT
+		amplitude = spectrogram[fft_bin, time_idx]
 
-                # Write rgb value to led
-                strip.setPixelColor(led, col)
+		# Convert to rgb value
+		col = amplitudeToColour( amplitude, freqs[fft_bin] );
 
-                led += 1
+		# Write rgb value to led
+		strip.setPixelColor(led, col)
 
-        strip.show()
-        firstTime = False
+		led += 1
 
-        currTime = time.time() - timeStart
+	# Display written values
+	strip.show()
+
+	# Update progress
+	currTime = time.time() - timeStart
 
 
 
-
-
-#clear leds
+# Clear LEDs
 colorWipe(strip, Color(0,0,0), 10)
 
 
 
+print("\n")
+print("Done!")
 
-iprint("This is the end")
