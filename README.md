@@ -69,4 +69,4 @@ If you have any bugs or feature requests, please submit an [issue](https://githu
 If you wish to contribute, fork my project and create a [pull request](https://github.com/patrickbiel01/Audio_Visualizer_Pi/pulls)
 
 ## License
-**Mandelbrot-Set** is released under the MIT LICENSE. See [LICENSE](https://github.com/patrickbiel01/Audio_Visualizer_Pi/blob/main/LICENSE) for details
+**Audio_Visualizer_Pi** is released under the MIT LICENSE. See [LICENSE](https://github.com/patrickbiel01/Audio_Visualizer_Pi/blob/main/LICENSE) for details
