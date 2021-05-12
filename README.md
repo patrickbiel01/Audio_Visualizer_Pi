@@ -1,7 +1,7 @@
 # Audio Visualizer
 An Audio Visualizer displayed using an LED Strip.
 
-Demo:
+Demo: [Audio Visualizer Demo - Raspberry Pi 4, WS2812b LED programmable strip](https://www.youtube.com/watch?v=_Mc0nE9OpsQ)
 
 
 ## Hardware Requirements :
